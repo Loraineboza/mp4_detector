@@ -1,3 +1,3 @@
 # mp4_detector
 
-[Смотреть демонстрацию работы](https://github.com/Loraineboza/mp4_detector/raw/main/videos/drift.mp4)
+<video src="https://github.com/Loraineboza/mp4_detector/releases/download/v1.0/drift.mp4" controls width="100%"></video>
