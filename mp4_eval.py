@@ -14,6 +14,7 @@ SCORE_THRESHOLD = 0.5
 np.random.seed(42)
 COLORS = np.random.randint(0, 255, size=(NUM_CLASSES, 3), dtype=np.uint8)
 
+OUTPUT_PATH = "./result_video.mp4"
 def load_model(model_path):
     model = fasterrcnn_resnet50_fpn(weights=None, weights_backbone=None)
     in_features = model.roi_heads.box_predictor.cls_score.in_features
@@ -72,7 +73,7 @@ def draw_detections(img_bgr, boxes, labels, scores):
     return img_out
 
 
-def process_video(video_path, model, output_path="result_video.mp4"):
+def process_video(video_path, model, output_path=OUTPUT_PATH):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise FileNotFoundError(f"Не удалось открыть видео: {video_path}")
@@ -124,6 +125,6 @@ def main(video_path, model_path):
 
 if __name__ == "__main__":
     main(
-        video_path=sys.argv[1] if len(sys.argv) > 1 else "./videos/drift.mp4",
+        video_path=sys.argv[1] if len(sys.argv) > 1 else "./videos/rase.mp4",
         model_path=sys.argv[2] if len(sys.argv) > 2 else WEIGHTS_PATH,
     )
