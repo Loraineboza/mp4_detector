@@ -260,7 +260,7 @@ Confidence score характеризует уверенность модели 
 
 ## Установка
 
-``bash
+```bash
 pip install numpy pytest
 ```
 
@@ -268,7 +268,7 @@ pip install numpy pytest
 
 Из каталога, содержащего `detection_metrics.py`:
 
-``bash
+```bash
 python -m pytest -q
 ```
 
