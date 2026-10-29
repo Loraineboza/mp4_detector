@@ -274,9 +274,9 @@ python -m pytest -q
 
 ## Пример API
 
-``python
+```python
 из detection_metrics импортируем pairwise_iou, nms, class_aware_nms, вычисляем_map50
-
+```
 долговые расписки = pairwise_iou(boxes_a, boxes_b) # форма (N, M)
 сохранение = nms(коробки, баллы, iou_threshold=0,5)
 keep_by_class = class_aware_nms(поля, оценки, ярлыки, iou_threshold=0,5)
