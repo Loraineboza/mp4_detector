@@ -1,199 +1,250 @@
-import json
-import os
-import random
-from datetime import datetime
+from __future__ import annotations
+
+from typing import Sequence
 
 import numpy as np
-import torch
-import torchvision
-import torch.optim as optim
-from torch.utils.data import DataLoader
-from tqdm import tqdm
-import torchvision.transforms.v2 as v2
-
-from voc2007dataset import VOC2007, NUM_CLASS, DEVICE
 
 
-SEED = 42
-batch_size = 2
-epochs = 30
-lr = 1e-3
-num_workers = 2
-
-patience = 10
-min_delta = 1e-4
-
-model_dir = "./model"
-WEIGHTS_PATH = os.path.join(model_dir, "weights_faster_rcnn_voc.pth")
-CONFIG_PATH = os.path.join(model_dir, "training_config.json")
-
-
-def set_seed(seed: int = SEED):
-    """Fix random seeds for reproducible runs."""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+def _as_box_array(boxes):
+    arr = np.asarray(boxes, dtype=np.float64)
+    if arr.size == 0:
+        return arr.reshape(0, 4)
+    if arr.ndim == 1:
+        if arr.shape[0] != 4:
+            raise ValueError(f"Expected a box with 4 coordinates, got shape {arr.shape}")
+        return arr.reshape(1, 4)
+    if arr.ndim != 2 or arr.shape[1] != 4:
+        raise ValueError(f"Boxes must have shape (N, 4), got {arr.shape}")
+    return arr
 
 
-def save_training_config(path: str, config: dict):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2, sort_keys=True)
+def compute_iou(box_a, box_b):
+    """IoU for a single pair of boxes in [x1, y1, x2, y2] format."""
+    box_a = _as_box_array(box_a)
+    box_b = _as_box_array(box_b)
+    if box_a.shape != (1, 4) or box_b.shape != (1, 4):
+        raise ValueError("compute_iou expects a single box for each argument")
+    return compute_iou_matrix(box_a, box_b)[0, 0]
 
 
-def collate_fn(batch):
-    return tuple(zip(*batch))
+def compute_iou_matrix(boxes_a, boxes_b):
+    """Vectorized IoU matrix of shape (N, M) for all pairs of boxes."""
+    boxes_a = _as_box_array(boxes_a)
+    boxes_b = _as_box_array(boxes_b)
 
+    if boxes_a.shape[0] == 0 or boxes_b.shape[0] == 0:
+        return np.zeros((boxes_a.shape[0], boxes_b.shape[0]), dtype=np.float64)
 
-def get_model(num_classes):
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(
-        weights=torchvision.models.detection.FasterRCNN_ResNet50_FPN_Weights.DEFAULT
-    )
-    in_features = model.roi_heads.box_predictor.cls_score.in_features
-    model.roi_heads.box_predictor = torchvision.models.detection.faster_rcnn.FastRCNNPredictor(
-        in_features, num_classes
-    )
-    return model
+    x1 = np.maximum(boxes_a[:, 0][:, None], boxes_b[None, :, 0])
+    y1 = np.maximum(boxes_a[:, 1][:, None], boxes_b[None, :, 1])
+    x2 = np.minimum(boxes_a[:, 2][:, None], boxes_b[None, :, 2])
+    y2 = np.minimum(boxes_a[:, 3][:, None], boxes_b[None, :, 3])
 
+    inter_w = np.maximum(0.0, x2 - x1)
+    inter_h = np.maximum(0.0, y2 - y1)
+    inter_area = inter_w * inter_h
 
-def train_one_epoch(model, optimizer, loader, device):
-    model.train()
-    total_loss = 0.0
-    pbar = tqdm(loader, desc="train")
+    area_a = np.maximum(0.0, boxes_a[:, 2] - boxes_a[:, 0]) * np.maximum(0.0, boxes_a[:, 3] - boxes_a[:, 1])
+    area_b = np.maximum(0.0, boxes_b[:, 2] - boxes_b[:, 0]) * np.maximum(0.0, boxes_b[:, 3] - boxes_b[:, 1])
+    union = area_a[:, None] + area_b[None, :] - inter_area
 
-    for images, targets in pbar:
-        images = [img.to(device, non_blocking=True) for img in images]
-        targets = [{k: v.to(device, non_blocking=True) for k, v in t.items()} for t in targets]
-
-        loss_dict = model(images, targets)
-        losses = sum(loss_dict.values())
-
-        optimizer.zero_grad(set_to_none=True)
-        losses.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
-        optimizer.step()
-
-        total_loss += losses.item()
-        pbar.set_postfix({"loss": f"{losses.item():.4f}"})
-
-    return total_loss / len(loader)
-
-
-@torch.no_grad()
-def compute_val_loss(model, loader, device):
-    # loss у faster r-cnn считается только в train-режиме, потому что нужен
-    # матчинг предсказаний с ground truth. поэтому держим модель в train,
-    # но замораживаем batchnorm, чтобы running stats не портились на валидации.
-    was_training = model.training
-    model.train()
-    for m in model.modules():
-        if isinstance(m, torch.nn.BatchNorm2d):
-            m.eval()
-
-    total_loss = 0.0
-    pbar = tqdm(loader, desc="val")
-    for images, targets in pbar:
-        images = [img.to(device, non_blocking=True) for img in images]
-        targets = [{k: v.to(device, non_blocking=True) for k, v in t.items()} for t in targets]
-
-        loss_dict = model(images, targets)
-        losses = sum(loss_dict.values())
-        total_loss += losses.item()
-        pbar.set_postfix({"val_loss": f"{losses.item():.4f}"})
-
-    if was_training:
-        model.train()
-    else:
-        model.eval()
-    return total_loss / len(loader)
-
-
-def main():
-    set_seed(SEED)
-    os.makedirs(model_dir, exist_ok=True)
-
-    run_config = {
-        "seed": SEED,
-        "batch_size": batch_size,
-        "epochs": epochs,
-        "learning_rate": lr,
-        "num_workers": num_workers,
-        "patience": patience,
-        "min_delta": min_delta,
-        "model_dir": model_dir,
-        "device": str(DEVICE),
-        "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
-    }
-    save_training_config(CONFIG_PATH, run_config)
-
-    transform = v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)])
-
-    train_dataset = VOC2007(train=True, transform=transform)
-    val_dataset = VOC2007(train=False, transform=transform)
-
-    train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True,
-        num_workers=num_workers, collate_fn=collate_fn, pin_memory=True,
-    )
-    val_loader = DataLoader(
-        val_dataset, batch_size=batch_size, shuffle=False,
-        num_workers=num_workers, collate_fn=collate_fn, pin_memory=True,
-    )
-
-    print(f"[CONFIG] seed={SEED}, batch_size={batch_size}, epochs={epochs}, lr={lr}, device={DEVICE}")
-    print(f"train: {len(train_dataset)}, val: {len(val_dataset)}")
-
-    model = get_model(NUM_CLASS).to(DEVICE)
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-
-    best_val_loss = float("inf")
-    epochs_no_improve = 0
-
-    for epoch in range(epochs):
-        print(f"\nэпоха {epoch + 1} из {epochs}")
-
-        train_loss = train_one_epoch(model, optimizer, train_loader, DEVICE)
-        val_loss = compute_val_loss(model, val_loader, DEVICE)
-        scheduler.step()
-
-        current_lr = optimizer.param_groups[0]["lr"]
-        print(
-            f"[epoch {epoch + 1}/{epochs}] train_loss={train_loss:.4f} "
-            f"val_loss={val_loss:.4f} lr={current_lr:.2e}"
+    with np.errstate(divide="ignore", invalid="ignore"):
+        iou = np.divide(
+            inter_area,
+            union,
+            out=np.zeros_like(inter_area, dtype=np.float64),
+            where=union > 0.0,
         )
-
-        if val_loss < best_val_loss - min_delta:
-            best_val_loss = val_loss
-            epochs_no_improve = 0
-            with open(WEIGHTS_PATH, "wb") as f:
-                torch.save(model.state_dict(), f)
-            print(f"val loss улучшился, веса сохранены в {WEIGHTS_PATH}")
-        else:
-            epochs_no_improve += 1
-            print(
-                f"улучшения нет уже {epochs_no_improve} эпох подряд "
-                f"(лучший val loss {best_val_loss:.4f})"
-            )
-            if epochs_no_improve >= patience:
-                print(
-                    f"останавливаем обучение: {patience} эпох без улучшения, "
-                    f"последняя эпоха {epoch + 1}"
-                )
-                break
-
-    print(f"\nобучение закончено, лучший val loss {best_val_loss:.4f}")
-    print(f"веса лежат тут: {WEIGHTS_PATH}")
-    print(f"конфигурация сохранена в: {CONFIG_PATH}")
+    return iou
 
 
-if __name__ == "__main__":
-    main()
+def non_max_suppression(boxes, scores, iou_threshold=0.5, score_threshold=0.0):
+    """Classic NMS in xyxy format with deterministic ordering for equal scores."""
+    boxes = _as_box_array(boxes)
+    scores = np.asarray(scores, dtype=np.float64).reshape(-1)
+
+    if boxes.shape[0] != scores.shape[0]:
+        raise ValueError(f"boxes and scores length mismatch: {boxes.shape[0]} != {scores.shape[0]}")
+    if boxes.shape[0] == 0:
+        return np.array([], dtype=np.int64)
+
+    valid = np.where(scores >= score_threshold)[0]
+    if valid.size == 0:
+        return np.array([], dtype=np.int64)
+
+    boxes = boxes[valid]
+    scores = scores[valid]
+    order = np.argsort(-scores, kind="mergesort")
+
+    keep = []
+    while order.size > 0:
+        current = order[0]
+        keep.append(valid[current])
+
+        if order.size == 1:
+            break
+
+        remaining = order[1:]
+        remaining_boxes = boxes[remaining]
+        ious = compute_iou_matrix(np.asarray([boxes[current]], dtype=np.float64), remaining_boxes)[0]
+        order = remaining[ious <= iou_threshold]
+
+    return np.asarray(keep, dtype=np.int64)
 
 
-path: "detection_utils.py",
-content: "from __future__ import annotations\n\nimport numpy as np\n\n\ndef _to_box_array(boxes):\n    arr = np.asarray(boxes, dtype=np.float64)\n    if arr.size == 0:\n        return arr.reshape(0, 4)\n    if arr.ndim == 1:\n        if arr.shape[0] != 4:\n            raise ValueError(f\"Expected a single box with 4 coordinates, got shape {arr.shape}\")\n        return arr.reshape(1, 4)\n    if arr.ndim != 2 or arr.shape[1] != 4:\n        raise ValueError(f\"Boxes must have shape (N, 4), got {arr.shape}\")\n    return arr\n\n\ndef _valid_box_mask(boxes):\n    x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]\n    widths = np.maximum(0.0, x2 - x1)\n    heights = np.maximum(0.0, y2 - y1)\n    return (widths > 0.0) & (heights > 0.0)\n\n\ndef compute_iou(box_a, box_b):\n    \"\"\"IoU for a single pair of boxes in xyxy format.\"\"\"\n    return compute_iou_matrix(np.asarray([box_a], dtype=np.float64), np.asarray([box_b], dtype=np.float64))[0, 0]\n\n\ndef compute_iou_matrix(boxes_a, boxes_b):\n    \"\"\"Vectorized IoU matrix of shape (N, M).\"\"\"\n    boxes_a = _to_box_array(boxes_a)\n    boxes_b = _to_box_array(boxes_b)\n\n    if boxes_a.shape[0] == 0 or boxes_b.shape[0] == 0:\n        return np.zeros((boxes_a.shape[0], boxes_b.shape[0]), dtype=np.float64)\n\n    mask_a = _valid_box_mask(boxes_a)\n    mask_b = _valid_box_mask(boxes_b)\n    if not np.all(mask_a) or not np.all(mask_b):\n        boxes_a = boxes_a.copy()\n        boxes_b = boxes_b.copy()\n        boxes_a[~mask_a] = 0.0\n        boxes_b[~mask_b] = 0.0\n\n    inter_x1 = np.maximum(boxes_a[:, 0][:, None], boxes_b[None, :, 0])\n    inter_y1 = np.maximum(boxes_a[:, 1][:, None], boxes_b[None, :, 1])\n    inter_x2 = np.minimum(boxes_a[:, 2][:, None], boxes_b[None, :, 2])\n    inter_y2 = np.minimum(boxes_a[:, 3][:, None], boxes_b[None, :, 3])\n\n    inter_w = np.maximum(0.0, inter_x2 - inter_x1)\n    inter_h = np.maximum(0.0, inter_y2 - inter_y1)\n    inter_area = inter_w * inter_h\n\n    area_a = np.maximum(0.0, boxes_a[:, 2] - boxes_a[:, 0]) * np.maximum(0.0, boxes_a[:, 3] - boxes_a[:, 1])\n    area_b = np.maximum(0.0, boxes_b[:, 2] - boxes_b[:, 0]) * np.maximum(0.0, boxes_b[:, 3] - boxes_b[:, 1])\n    union = area_a[:, None] + area_b[None, :] - inter_area\n\n    with np.errstate(divide='ignore', invalid='ignore'):\n        iou = np.divide(inter_area, union, out=np.zeros_like(inter_area), where=union > 0.0)\n    return iou\n\n\ndef non_max_suppression(boxes, scores, iou_threshold=0.5, score_threshold=0.0):\n    \"\"\"Classic NMS for boxes in xyxy format. Returns kept indices.\"\"\"\n    boxes = _to_box_array(boxes)\n    scores = np.asarray(scores, dtype=np.float64)\n\n    if scores.ndim != 1 or scores.shape[0] != boxes.shape[0]:\n        raise ValueError(f\"scores shape {scores.shape} does not match boxes shape {boxes.shape}\")\n\n    if boxes.shape[0] == 0:\n        return np.array([], dtype=np.int64)\n\n    valid = np.arange(boxes.shape[0])\n    if score_threshold is not None:\n        valid = valid[scores >= score_threshold]\n\n    if valid.size == 0:\n        return np.array([], dtype=np.int64)\n\n    boxes = boxes[valid]\n    scores = scores[valid]\n    order = np.argsort(scores)[::-1]\n    keep = []\n\n    while order.size > 0:\n        current = order[0]\n        keep.append(valid[current])\n        if order.size == 1:\n            break\n\n        remaining = order[1:]\n        remaining_boxes = boxes[remaining]\n        iou = compute_iou_matrix(np.asarray([boxes[current]], dtype=np.float64), remaining_boxes)[0]\n        order = remaining[iou <= iou_threshold]\n\n    return np.asarray(keep, dtype=np.int64)\n\n"},{
+def precision_recall(tp: Sequence[int], fp: Sequence[int], total_gt: int):
+    """Return overall precision and recall for a detection list."""
+    tp = np.asarray(tp, dtype=np.float64)
+    fp = np.asarray(fp, dtype=np.float64)
+    if total_gt < 0:
+        raise ValueError("total_gt must be non-negative")
+
+    tp_total = float(tp.sum())
+    fp_total = float(fp.sum())
+    precision = tp_total / (tp_total + fp_total) if (tp_total + fp_total) > 0 else 0.0
+    recall = tp_total / float(total_gt) if total_gt > 0 else 0.0
+    return precision, recall
+
+
+def average_precision_from_tp_fp(tp: Sequence[int], fp: Sequence[int], total_gt: int):
+    """11-point interpolated AP for a single class."""
+    tp = np.asarray(tp, dtype=np.float64)
+    fp = np.asarray(fp, dtype=np.float64)
+
+    if total_gt == 0:
+        return 0.0
+
+    cumsum_tp = np.cumsum(tp)
+    cumsum_fp = np.cumsum(fp)
+    precision = cumsum_tp / np.maximum(cumsum_tp + cumsum_fp, 1e-12)
+    recall = cumsum_tp / float(total_gt)
+
+    precision = np.maximum.accumulate(precision[::-1])[::-1]
+    recall_levels = np.linspace(0.0, 1.0, 11)
+    ap = 0.0
+    for level in recall_levels:
+        values = precision[recall >= level]
+        ap += (values.max() if values.size else 0.0) / len(recall_levels)
+    return float(ap)
+
+
+def evaluate_class_predictions(gt_boxes, gt_labels, pred_boxes, pred_labels, pred_scores, iou_threshold=0.5):
+    """Evaluate one class, returning TP/FP/FN and AP for that class."""
+    gt_boxes = _as_box_array(gt_boxes)
+    pred_boxes = _as_box_array(pred_boxes)
+    gt_labels = np.asarray(gt_labels)
+    pred_labels = np.asarray(pred_labels)
+    pred_scores = np.asarray(pred_scores, dtype=np.float64)
+
+    if gt_boxes.shape[0] != gt_labels.shape[0]:
+        raise ValueError("Number of gt boxes and gt labels mismatch")
+    if pred_boxes.shape[0] != pred_labels.shape[0] or pred_boxes.shape[0] != pred_scores.shape[0]:
+        raise ValueError("Number of pred boxes, labels and scores mismatch")
+
+    class_id = set(gt_labels) | set(pred_labels)
+    if len(class_id) == 0:
+        return {"tp": 0, "fp": 0, "fn": 0, "precision": 0.0, "recall": 0.0, "ap": 0.0}
+
+    tp = []
+    fp = []
+    used_gt = set()
+    gt_indices = np.where(gt_labels == next(iter(class_id)))[0]
+    pred_indices = np.where(pred_labels == next(iter(class_id)))[0]
+
+    for cls in sorted(class_id, key=lambda x: str(x)):
+        gt_indices = np.where(gt_labels == cls)[0]
+        pred_indices = np.where(pred_labels == cls)[0]
+        if pred_indices.size == 0:
+            total_gt = int(gt_indices.size)
+            tp.extend([0] * total_gt)
+            fp.extend([0] * total_gt)
+            continue
+
+        order = np.argsort(-pred_scores[pred_indices], kind="mergesort")
+        sorted_pred_indices = pred_indices[order]
+        local_tp = []
+        local_fp = []
+        matched_gt = set()
+
+        for pred_idx in sorted_pred_indices:
+            gt_candidates = np.array([gt_idx for gt_idx in gt_indices if gt_idx not in matched_gt], dtype=int)
+            if gt_candidates.size == 0:
+                local_tp.append(0)
+                local_fp.append(1)
+                continue
+
+            ious = compute_iou_matrix(np.asarray([pred_boxes[pred_idx]], dtype=np.float64), gt_boxes[gt_candidates])[0]
+            best_match = int(np.argmax(ious))
+            best_iou = float(ious[best_match])
+            if best_iou > iou_threshold:
+                matched_gt.add(int(gt_candidates[best_match]))
+                local_tp.append(1)
+                local_fp.append(0)
+            else:
+                local_tp.append(0)
+                local_fp.append(1)
+
+        tp.extend(local_tp)
+        fp.extend(local_fp)
+
+    total_gt = int(gt_labels.shape[0])
+    total_tp = int(np.sum(tp))
+    total_fp = int(np.sum(fp))
+    total_fn = max(total_gt - total_tp, 0)
+    precision, recall = precision_recall(tp, fp, total_gt)
+    ap = average_precision_from_tp_fp(tp, fp, total_gt)
+
+    return {
+        "tp": total_tp,
+        "fp": total_fp,
+        "fn": total_fn,
+        "precision": precision,
+        "recall": recall,
+        "ap": ap,
+    }
+
+
+def mean_average_precision(gt_boxes, gt_labels, pred_boxes, pred_labels, pred_scores, iou_threshold=0.5):
+    """mAP@IoU with one AP value per class averaged across all classes."""
+    gt_boxes = _as_box_array(gt_boxes)
+    pred_boxes = _as_box_array(pred_boxes)
+    gt_labels = np.asarray(gt_labels)
+    pred_labels = np.asarray(pred_labels)
+    pred_scores = np.asarray(pred_scores, dtype=np.float64)
+
+    classes = sorted(set(gt_labels) | set(pred_labels), key=lambda x: str(x))
+    ap_values = []
+    for cls in classes:
+        gt_cls = gt_boxes[gt_labels == cls]
+        gt_cls_labels = gt_labels[gt_labels == cls]
+        pred_cls = pred_boxes[pred_labels == cls]
+        pred_cls_labels = pred_labels[pred_labels == cls]
+        pred_cls_scores = pred_scores[pred_labels == cls]
+
+        if pred_cls.size == 0 and gt_cls.size == 0:
+            continue
+
+        result = evaluate_class_predictions(
+            gt_cls,
+            gt_cls_labels,
+            pred_cls,
+            pred_cls_labels,
+            pred_cls_scores,
+            iou_threshold=iou_threshold,
+        )
+        ap_values.append(result["ap"])
+
+    if not ap_values:
+        return 0.0
+    return float(np.mean(ap_values))
+
+
+__all__ = [
+    "compute_iou",
+    "compute_iou_matrix",
+    "non_max_suppression",
+    "precision_recall",
+    "average_precision_from_tp_fp",
+    "evaluate_class_predictions",
+    "mean_average_precision",
+]
