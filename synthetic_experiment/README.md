@@ -51,7 +51,7 @@ python experiment.py
 - SGD lr=0.001: validation MSE 2.256805419921875
 - SGD lr=0.1: validation MSE 0.13025516668955486
 
-Подробный журнал по эпохам находится в training_log.json, итоговая машинно-читаемая сводка — в summary.json. Успешный CI run: https://github.com/Loraineboza/mp4_detector/actions/runs/43743950342.
+Подробный журнал по эпохам находится в training_log.json, итоговая машинно-читаемая сводка — в summary.json. Успешный CI run: https://github.com/Loraineboza/mp4_detector/actions/runs/43744160446.
 
 ## Ограничения
 
