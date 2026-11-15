@@ -180,7 +180,6 @@ def main():
             if torch.cuda.is_available() and "cuda_rng_state_all" in checkpoint:
                 torch.cuda.set_rng_state_all(checkpoint["cuda_rng_state_all"])
         else:
-            # Backward compatibility with checkpoints containing only model weights.
             model.load_state_dict(checkpoint)
 
     for epoch in range(start_epoch, epochs):
@@ -220,8 +219,6 @@ def main():
                 f"(лучший val loss {best_val_loss:.4f})"
             )
 
-        # Save the latest state every epoch so interruption does not roll back
-        # to the last epoch that improved validation loss.
         torch.save({
             "epoch": epoch,
             "model_state_dict": model.state_dict(),
