@@ -1,4 +1,8 @@
+import json
 import os
+import random
+
+import numpy as np
 import torch
 import torchvision
 import torch.optim as optim
@@ -16,9 +20,28 @@ num_workers = 2
 
 patience = 10
 min_delta = 1e-4
+SEED = 42
 
 model_dir = "./model"
 WEIGHTS_PATH = os.path.join(model_dir, "weights_faster_rcnn_voc.pth")
+CONFIG_PATH = os.path.join(model_dir, "training_config.json")
+
+
+def set_seed(seed=SEED):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    if hasattr(torch.backends, "cudnn"):
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % (2**32)
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
 
 def collate_fn(batch):
@@ -89,15 +112,36 @@ def compute_val_loss(model, loader, device):
 
 def main():
     os.makedirs(model_dir, exist_ok=True)
+    set_seed(SEED)
+
+    config = {
+        "seed": SEED,
+        "batch_size": batch_size,
+        "epochs": epochs,
+        "learning_rate": lr,
+        "num_workers": num_workers,
+        "optimizer": "SGD",
+        "momentum": 0.9,
+        "weight_decay": 1e-4,
+        "scheduler": {"name": "StepLR", "step_size": 5, "gamma": 0.1},
+        "early_stopping": {"patience": patience, "min_delta": min_delta},
+        "device": str(DEVICE),
+        "dataset": "PASCAL VOC 2007",
+    }
+    with open(CONFIG_PATH, "w", encoding="utf-8") as config_file:
+        json.dump(config, config_file, ensure_ascii=False, indent=2)
 
     transform = v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)])
 
     train_dataset = VOC2007(train=True, transform=transform)
     val_dataset = VOC2007(train=False, transform=transform)
 
+    loader_generator = torch.Generator()
+    loader_generator.manual_seed(SEED)
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
         num_workers=num_workers, collate_fn=collate_fn, pin_memory=True,
+        worker_init_fn=seed_worker, generator=loader_generator,
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
@@ -107,21 +151,26 @@ def main():
     print(f"train: {len(train_dataset)}, val: {len(val_dataset)}")
 
     model = get_model(NUM_CLASS).to(DEVICE)
-    start_epoch = 0
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+
+    start_epoch = 0
     best_val_loss = float("inf")
+    epochs_no_improve = 0
+
     if os.path.exists(WEIGHTS_PATH):
         checkpoint = torch.load(WEIGHTS_PATH, map_location=DEVICE)
-        model.load_state_dict(checkpoint["model_state_dict"])
-        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        start_epoch = checkpoint["epoch"] + 1
-        best_val_loss = checkpoint["loss"]
-    
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-    if os.path.exists(WEIGHTS_PATH):
-        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-    
-    epochs_no_improve = 0
+        if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+            model.load_state_dict(checkpoint["model_state_dict"])
+            if "optimizer_state_dict" in checkpoint:
+                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            if "scheduler_state_dict" in checkpoint:
+                scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+            start_epoch = int(checkpoint.get("epoch", -1)) + 1
+            best_val_loss = float(checkpoint.get("loss", float("inf")))
+            epochs_no_improve = int(checkpoint.get("epochs_no_improve", 0))
+        else:
+            model.load_state_dict(checkpoint)
 
     for epoch in range(start_epoch, epochs):
         print(f"\nэпоха {epoch + 1} из {epochs}")
@@ -145,7 +194,9 @@ def main():
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
                     "scheduler_state_dict": scheduler.state_dict(),
-                    "loss": val_loss,
+                    "loss": float(val_loss),
+                    "epochs_no_improve": epochs_no_improve,
+                    "config": config,
                 }, f)
             print(f"val loss улучшился, веса сохранены в {WEIGHTS_PATH}")
         else:
