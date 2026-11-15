@@ -35,9 +35,9 @@ https://github.com/user-attachments/assets/95dd7166-d425-4b7e-8bac-d9dfe1672d74
 
 Основные геометрические операции для работы с ограничивающими рамками реализованы в модуле `detection_metrics.py` и/или библиотеке `detection_utils` при необходимости расширения логики оценки:
 
-- `compute_iou(box_a, box_b)` — IoU для одной пары рамок в формате `[x1, y1, x2, y2]`.
-- `compute_iou_matrix(boxes_a, boxes_b)` — векторизованный расчёт IoU для всех пар рамок размера `(N, M)`.
-- `non_max_suppression(boxes, scores, iou_threshold=0.5, score_threshold=0.0)` — подавление перекрывающихся рамок по confidence и IoU.
+- `box_iou(box_a, box_b)` — IoU для одной пары рамок в формате `[x1, y1, x2, y2]`.
+- `pairwise_iou(boxes_a, boxes_b)` — векторизованный расчёт IoU для всех пар рамок размера `(N, M)`.
+- `nms(boxes, scores, iou_threshold=0.5, score_threshold=0.0)` — подавление перекрывающихся рамок по confidence и IoU.
 
 Формула IoU:
 
