@@ -1,58 +1,76 @@
 # Synthetic PyTorch experiment
 
-Небольшой воспроизводимый эксперимент для проверки базового PyTorch training workflow. Работает на CPU, использует только синтетические данные и не скачивает датасеты.
+Воспроизводимый CPU-only эксперимент по бинарной классификации синтетических данных. Внешние датасеты не скачиваются.
 
-## Состав проверки
+## Данные и задача
 
-- фиксированный seed Python, NumPy и PyTorch;
-- раздельные train/validation/test выборки (420/90/90);
-- небольшая MLP-регрессия и явный цикл обучения;
-- validation выполняется с model.eval() и torch.no_grad();
-- лучший checkpoint выбирается по validation MSE;
-- checkpoint содержит модель, optimizer, эпоху и лучшую метрику;
-- проверяется побитовая идентичность предсказаний после загрузки;
-- optimizer state восстанавливается и выполняется дополнительная эпоха обучения;
-- сравниваются две скорости обучения при одинаковых данных, начальных весах, batch order и количестве эпох.
+Генерируются две частично пересекающиеся двумерные Gaussian distributions:
+
+- 600 объектов, по 300 на класс;
+- 2 входных признака;
+- стратифицированное разбиение: train — 420, validation — 90, test — 90;
+- seed генератора данных: 42.
+
+Данные создаются средствами NumPy. Признаки не нормализуются, поэтому отдельная оценка статистик нормализации не требуется.
+
+## Архитектура
+
+```text
+Linear(2, 16)
+ReLU
+Linear(16, 1)
+```
+
+Выход последнего слоя — logits. Для обучения используется `BCEWithLogitsLoss`, который объединяет sigmoid и binary cross-entropy.
+
+## Обучение и проверка
+
+Скрипт реализует:
+
+- фиксированные seed для Python, NumPy и PyTorch;
+- явный цикл: `zero_grad`, forward, loss, `backward`, `optimizer.step`;
+- validation в `model.eval()` и `torch.no_grad()`;
+- выбор checkpoint по минимальному validation loss;
+- однократную оценку выбранной модели на test;
+- сохранение model state, optimizer state, эпохи и validation-метрик;
+- загрузку checkpoint и сравнение предсказаний на фиксированном batch;
+- восстановление optimizer state и продолжение обучения;
+- сравнение SGD с learning rate 0.001 и 0.1 при одинаковых начальных весах, данных, порядке batch и числе эпох.
+
+Скрипт включает ограничения детерминизма PyTorch. Совпадение результатов между разными версиями библиотек, устройствами и платформами не гарантируется.
 
 ## Установка
 
-Используйте Python 3.10+ и совместимую пару PyTorch/torchvision. Для этого эксперимента torchvision не требуется.
+Требуется Python 3.10+ и PyTorch. Установите PyTorch подходящей для вашей ОС версии, следуя официальной инструкции: https://pytorch.org/get-started/locally/
 
-~~~bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -U pip
-python -m pip install -r requirements.txt
-~~~
+Для запуска этого эксперимента torchvision и VOC 2007 не требуются.
 
 ## Запуск
 
-Из каталога synthetic_experiment:
+Из корня репозитория:
 
-~~~bash
-python experiment.py
-~~~
+```bash
+python synthetic_experiment/experiment.py
+```
 
-Артефакты сохраняются в artifacts/: best_checkpoint.pt, training_log.json и summary.json.
+Можно указать каталог артефактов:
 
-## Фактический запуск
+```bash
+python synthetic_experiment/experiment.py --output-dir synthetic_experiment/artifacts
+```
 
-Основной воспроизводимый CI-прогон выполнен на CPU с PyTorch 2.15.0+cpu, seed=42. Отдельный локальный запуск в рабочей среде также завершился успешно на PyTorch 2.10.0+cpu; небольшие отличия последних знаков метрик ожидаемы между версиями PyTorch.
+По умолчанию артефакты сохраняются в `synthetic_experiment/artifacts/`:
 
-- best epoch: 28
-- best validation MSE: 0.07386214733123779
-- test MSE: 0.2303724898232354
-- predictions after checkpoint reload: exactly equal
-- restored optimizer state entries: 4
-- training continued after optimizer restoration: yes
-- continued training MSE: 0.1113555644417093
+- `best_checkpoint.pt` — лучший checkpoint;
+- `training_log.json` — train/validation метрики по эпохам;
+- `summary.json` — test-результаты, проверка восстановления и сравнение learning rate.
 
-Сравнение learning rate после 20 эпох при одинаковых данных и начальном состоянии:
-- SGD lr=0.001: validation MSE 2.256805419921875
-- SGD lr=0.1: validation MSE 0.13025516668955486
+## Интерпретация
 
-Подробный журнал по эпохам находится в training_log.json, итоговая машинно-читаемая сводка — в summary.json. Успешный CI run: https://github.com/Loraineboza/mp4_detector/actions/runs/43744160446.
+Test используется только один раз после выбора модели по validation. Сравнение learning rate также проводится по validation, а не по test. Поэтому test-метрики не участвуют в выборе модели или гиперпараметров.
+
+Значения метрик формируются скриптом при запуске и сохраняются в `summary.json`. CI workflow сохраняет созданные артефакты как downloadable artifact.
 
 ## Ограничения
 
-Это синтетическая регрессионная задача для проверки цикла обучения, валидации, checkpoint/resume и влияния learning rate. Она не измеряет качество Faster R-CNN и не заменяет эксперимент на реальном датасете.
+Эксперимент проверяет базовый PyTorch workflow на синтетической бинарной классификации. Он не измеряет качество Faster R-CNN, не является экспериментом на Pascal VOC 2007 и не заменяет полноценную оценку детектора.
