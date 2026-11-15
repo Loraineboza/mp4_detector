@@ -8,7 +8,7 @@ import torchvision
 import torchvision.transforms.v2 as v2 
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 
-root = Path("./VOCdevkit/VOC2007")
+root = Path(__file__).resolve().parent / "VOCdevkit" / "VOC2007"
 train_root = root / "ImageSets" / "Main" / "train.txt"
 val_root = root / "ImageSets" / "Main" / "val.txt"
 
