@@ -143,7 +143,7 @@ print(metrics["map"])
 
 ## Проверки
 
-Совместимость API модели проверена отдельным CPU smoke test в GitHub Actions: PyTorch 2.15.0+cpu и torchvision 0.29.2+cpu; создание FasterRCNN с 21 классом прошло успешно. Это подтверждает совместимость указанной версии API, но не является полным обучением VOC-модели. CI run: https://github.com/Loraineboza/mp4_detector/actions/runs/43743825163.
+Совместимость API модели проверена отдельным CPU smoke test в GitHub Actions: PyTorch 2.15.0+cpu и torchvision 0.29.2+cpu; создание FasterRCNN с 21 классом прошло успешно. Это подтверждает совместимость указанной версии API, но не является полным обучением VOC-модели. CI run: https://github.com/Loraineboza/mp4_detector/actions/runs/43743950342.
 
 Тесты NumPy-модуля:
 
@@ -151,7 +151,7 @@ print(metrics["map"])
 python -m pytest -q tests_metrics
 ~~~
 
-Они проверяют геометрию IoU, матрицу попарных IoU, NMS и расчёт detection metrics на синтетических примерах. Они не запускают обучение Faster R-CNN.
+Последний успешный CI прогон: 14 passed; также выполнен compileall для train.py и inference-скриптов. Тесты проверяют геометрию IoU, матрицу попарных IoU, NMS и расчёт detection metrics на синтетических примерах. Они не запускают обучение Faster R-CNN.
 
 Для воспроизводимого CPU-эксперимента без внешнего датасета см. отдельный каталог synthetic_experiment, добавленный в рамках второго этапа проверки.
 
