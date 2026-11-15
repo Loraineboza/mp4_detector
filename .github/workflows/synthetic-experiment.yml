@@ -1,0 +1,40 @@
+name: Synthetic PyTorch experiment
+
+on:
+  push:
+    branches:
+      - review/second-stage-2026-11
+    paths:
+      - "synthetic_experiment/**"
+      - ".github/workflows/synthetic-experiment.yml"
+  workflow_dispatch:
+
+jobs:
+  synthetic-experiment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Run experiment
+        run: |
+          python synthetic_experiment/experiment.py
+
+      - name: Upload checkpoint and metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytorch-synthetic-experiment
+          path: synthetic_experiment/artifacts/
+          if-no-files-found: error
+          retention-days: 30
