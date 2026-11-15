@@ -232,7 +232,10 @@ def run_experiment(output_dir: Path):
     # The held-out test set is evaluated once, after validation-based selection.
     test_metrics = evaluate(best_model, test_loader)
 
-    sample_features, _ = next(iter(test_loader))
+    # Use a fixed synthetic probe, not the held-out test set, for reload verification.
+    sample_features = torch.tensor(
+        [[-1.0, -0.5], [0.5, 0.5]], dtype=torch.float32
+    )
     best_model.eval()
     with torch.no_grad():
         predictions_before = best_model(sample_features).clone()
