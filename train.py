@@ -107,13 +107,23 @@ def main():
     print(f"train: {len(train_dataset)}, val: {len(val_dataset)}")
 
     model = get_model(NUM_CLASS).to(DEVICE)
+    start_epoch = 0
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-
     best_val_loss = float("inf")
+    if os.path.exists(WEIGHTS_PATH):
+        checkpoint = torch.load(WEIGHTS_PATH, map_location=DEVICE)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        start_epoch = checkpoint["epoch"] + 1
+        best_val_loss = checkpoint["loss"]
+    
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    if os.path.exists(WEIGHTS_PATH):
+        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+    
     epochs_no_improve = 0
 
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         print(f"\nэпоха {epoch + 1} из {epochs}")
 
         train_loss = train_one_epoch(model, optimizer, train_loader, DEVICE)
@@ -134,7 +144,8 @@ def main():
                     "epoch": epoch,
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
-                    "loss": loss,
+                    "scheduler_state_dict": scheduler.state_dict(),
+                    "loss": val_loss,
                 }, f)
             print(f"val loss улучшился, веса сохранены в {WEIGHTS_PATH}")
         else:
