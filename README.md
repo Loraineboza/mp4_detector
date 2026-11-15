@@ -274,13 +274,13 @@ python -m pytest -q
 
 ## API example
 ```python
-from detection_metrics import pairwise_iou, nms, class_aware_nms, evaluate_map50
+from detection_metrics import pairwise_iou, nms, class_aware_nms, evaluate_detections
 
 ious = pairwise_iou(boxes_a, boxes_b)  # shape (N, M)
 keep = nms(boxes, scores, iou_threshold=0.5)
 keep_by_class = class_aware_nms(boxes, scores, labels, iou_threshold=0.5)
 
-metrics = evaluate_map50(predictions, targets, class_ids=range(1, 21))
+metrics = evaluate_detections(predictions, targets, class_ids=range(1, 21))
 print(metrics["map"])
 print(metrics["ap_by_class"])
 ```
@@ -301,7 +301,7 @@ xyxy), `labels` (`N`, целочисленные идентификаторы к
 
 Этот модуль является автономным и не подключен к текущему конвейеру обучения или логического вывода.
 Чтобы рассчитать карту проверки, соберите предсказания модели каждого изображения и цели в формате
-документированного списка, затем вызовите `evaluate_map50`. Перед интеграцией проверьте соответствие идентификатора класса, используемого
+документированного списка, затем вызовите `evaluate_detections`. Перед интеграцией проверьте соответствие идентификатора класса, используемого
 в проекте. Набор тестов проверяет поведение утилиты, а не сквозную модель
 качество или существующие скрипты репозитория.
 
