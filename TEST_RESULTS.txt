@@ -1,19 +1,28 @@
-Command: python -m pytest -q
-Exit code: 0
+# Test results
 
-STDOUT:
-[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m                                                              [100%][0m
-[32m[32m[1m11 passed[0m[32m in 0.06s[0m[0m
+## Baseline review result
 
+The previous review reported 11 passing tests for the NumPy detection metrics module.
 
-STDERR:
-Spreadsheet runtime warmup failed during python startup
-Traceback (most recent call last):
-  File "/tmp/tmp.QlpUkOUI9D/artifact_tool_v2-2.8.66/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py", line 26, in warm_spreadsheet_runtime_on_startup
-  File "/tmp/tmp.QlpUkOUI9D/artifact_tool_v2-2.8.66/artifact_tool/spreadsheet_warmup.py", line 785, in warm_spreadsheet_runtime
-  File "/tmp/tmp.QlpUkOUI9D/artifact_tool_v2-2.8.66/artifact_tool/spreadsheet_warmup.py", line 718, in _warm_feature_flows
-  File "/tmp/tmp.QlpUkOUI9D/artifact_tool_v2-2.8.66/artifact_tool/spreadsheet_warmup.py", line 509, in _warm_drawing_and_image_flows
-  File "/tmp/tmp.QlpUkOUI9D/artifact_tool_v2-2.8.66/artifact_tool/generated/interface/models.py", line 32861, in bring_to_front
-  File "/tmp/tmp.QlpUkOUI9D/artifact_tool_v2-2.8.66/artifact_tool/rpc/remote.py", line 764, in __call__
-  File "/tmp/tmp.QlpUkOUI9D/artifact_tool_v2-2.8.66/artifact_tool/rpc/client.py", line 175, in call
-artifact_tool.rpc.client.RemoteError: Element ordering requires an owning element collection.
+## Second-stage CI
+
+Latest successful run:
+https://github.com/Loraineboza/mp4_detector/actions/runs/43743950342
+
+Environment:
+- Python 3.11
+- NumPy and pytest installed in GitHub Actions
+- PyTorch 2.15.0+cpu
+- torchvision 0.29.2+cpu
+
+Checks:
+- Python compileall for train.py, img_eval.py, mp4_eval.py and detection_metrics.py: passed.
+- NumPy detection metrics tests: 14 passed.
+- CPU synthetic PyTorch experiment: passed.
+- Faster R-CNN model-construction smoke test: passed.
+
+The 14 metric tests include three additional tests for the documented handling of reversed/degenerate xyxy boxes.
+
+The synthetic experiment results are recorded in synthetic_experiment/results/summary.json and training_log.json.
+
+No full Faster R-CNN training run on VOC 2007 is claimed.
