@@ -4,7 +4,7 @@ from PIL import Image
 import numpy as np
 import torch
 
-root = Path("./VOCdevkit/VOC2007/")
+root = Path(__file__).resolve().parent / "VOCdevkit" / "VOC2007"
 train = root / "ImageSets" / "Main" / "train.txt"
 val = root / "ImageSets" / "Main" / "val.txt"
 
