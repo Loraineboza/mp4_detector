@@ -85,12 +85,17 @@ def run_experiment(lr: float, train_set: TensorDataset,
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     checkpoint_path = os.path.join(CHECKPOINT_DIR, f"best_lr_{lr:g}.pth")
     best_val_loss = float("inf")
+    sample_x, _ = next(iter(test_loader))
+    best_predictions = None
 
     for epoch in range(EPOCHS):
         train_one_epoch(model, optimizer, train_loader)
         val_loss = evaluate(model, val_loader)
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            model.eval()
+            with torch.no_grad():
+                best_predictions = model(sample_x).detach().clone()
             torch.save({
                 "epoch": epoch,
                 "learning_rate": lr,
@@ -105,14 +110,12 @@ def run_experiment(lr: float, train_set: TensorDataset,
     restored_optimizer = torch.optim.Adam(restored_model.parameters(), lr=lr)
     restored_optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-    expected_model = RegressionNet()
-    expected_model.load_state_dict(checkpoint["model_state_dict"])
-    sample_x, _ = next(iter(test_loader))
-    expected_model.eval()
+    if best_predictions is None:
+        raise AssertionError("No best-model predictions were captured")
     restored_model.eval()
     with torch.no_grad():
         torch.testing.assert_close(
-            restored_model(sample_x), expected_model(sample_x), rtol=0.0, atol=0.0
+            restored_model(sample_x), best_predictions, rtol=0.0, atol=0.0
         )
     test_loss = evaluate(restored_model, test_loader)
 
