@@ -41,6 +41,9 @@ DEFAULT_CONFIG = {
     "model_dir": "./model",
 }
 
+model_dir = DEFAULT_CONFIG["model_dir"]
+WEIGHTS_PATH = os.path.join(model_dir, "weights_faster_rcnn_voc.pth")
+
 
 def seed_everything(seed: int) -> None:
     random.seed(seed)
