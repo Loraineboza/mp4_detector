@@ -117,6 +117,27 @@ python mp4_eval.py videos/rase.mp4
 
 При необходимости вторым аргументом передайте путь к файлу weights_faster_rcnn_voc.pth. Порог confidence по умолчанию 0.5 находится в img_eval.py и mp4_eval.py. Скрипты используют OpenCV для отображения и сохранения результатов.
 
+## Синтетический PyTorch-эксперимент
+
+Отдельный CPU-only эксперимент для проверки требований к обучению PyTorch без скачивания внешних датасетов:
+
+- две частично пересекающиеся группы двумерных точек;
+- train/validation/test split;
+- явный цикл обучения и validation в `eval()` / `no_grad()`;
+- выбор checkpoint только по validation loss;
+- однократная оценка выбранной модели на test;
+- сохранение и восстановление model/optimizer state;
+- проверка идентичности предсказаний после загрузки и продолжение обучения;
+- сравнение двух learning rate на одинаковой начальной модели и данных.
+
+Запуск из корня репозитория:
+
+~~~bash
+python synthetic_experiment/experiment.py
+~~~
+
+Артефакты сохраняются в `synthetic_experiment/artifacts/`: checkpoint, журнал обучения и итоговый JSON. GitHub Actions также публикует их в workflow artifact с именем `pytorch-synthetic-experiment`. Подробности — в [synthetic_experiment/README.md](synthetic_experiment/README.md).
+
 ## NumPy IoU и NMS
 
 Формат рамок: xyxy = [x_min, y_min, x_max, y_max]. Координаты трактуются как непрерывные, без добавления единицы к ширине или высоте:
@@ -151,7 +172,7 @@ print(metrics["map"])
 python -m pytest -q tests_metrics
 ~~~
 
-Последний успешный CI прогон: 14 passed; также выполнен compileall для train.py и inference-скриптов. Тесты проверяют геометрию IoU, матрицу попарных IoU, NMS и расчёт detection metrics на синтетических примерах. Они не запускают обучение Faster R-CNN.
+Тесты включают проверки IoU, pairwise IoU, NMS, метрик обнаружения, касания границ и вырожденных рамок. GitHub Actions проверяет NumPy-модуль и компиляцию Python-скриптов. Тесты проверяют геометрию IoU, матрицу попарных IoU, NMS и расчёт detection metrics на синтетических примерах. Они не запускают обучение Faster R-CNN.
 
 Для воспроизводимого CPU-эксперимента без внешнего датасета см. отдельный каталог synthetic_experiment, добавленный в рамках второго этапа проверки.
 
