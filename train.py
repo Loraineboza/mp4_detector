@@ -24,6 +24,7 @@ SEED = 42
 
 model_dir = "./model"
 WEIGHTS_PATH = os.path.join(model_dir, "weights_faster_rcnn_voc.pth")
+LAST_CHECKPOINT_PATH = os.path.join(model_dir, "last_checkpoint.pth")
 CONFIG_PATH = os.path.join(model_dir, "training_config.json")
 
 
@@ -158,8 +159,9 @@ def main():
     best_val_loss = float("inf")
     epochs_no_improve = 0
 
-    if os.path.exists(WEIGHTS_PATH):
-        checkpoint = torch.load(WEIGHTS_PATH, map_location=DEVICE)
+    resume_path = LAST_CHECKPOINT_PATH if os.path.exists(LAST_CHECKPOINT_PATH) else WEIGHTS_PATH
+    if os.path.exists(resume_path):
+        checkpoint = torch.load(resume_path, map_location=DEVICE)
         if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
             model.load_state_dict(checkpoint["model_state_dict"])
             if "optimizer_state_dict" in checkpoint:
@@ -167,9 +169,12 @@ def main():
             if "scheduler_state_dict" in checkpoint:
                 scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
             start_epoch = int(checkpoint.get("epoch", -1)) + 1
-            best_val_loss = float(checkpoint.get("loss", float("inf")))
+            best_val_loss = float(
+                checkpoint.get("best_val_loss", checkpoint.get("loss", float("inf")))
+            )
             epochs_no_improve = int(checkpoint.get("epochs_no_improve", 0))
         else:
+            # Backward compatibility with checkpoints containing only model weights.
             model.load_state_dict(checkpoint)
 
     for epoch in range(start_epoch, epochs):
@@ -188,29 +193,43 @@ def main():
         if val_loss < best_val_loss - min_delta:
             best_val_loss = val_loss
             epochs_no_improve = 0
-            with open(WEIGHTS_PATH, "wb") as f:
-                torch.save({
-                    "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "scheduler_state_dict": scheduler.state_dict(),
-                    "loss": float(val_loss),
-                    "epochs_no_improve": epochs_no_improve,
-                    "config": config,
-                }, f)
-            print(f"val loss улучшился, веса сохранены в {WEIGHTS_PATH}")
+            torch.save({
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "loss": float(val_loss),
+                "best_val_loss": float(best_val_loss),
+                "epochs_no_improve": epochs_no_improve,
+                "config": config,
+            }, WEIGHTS_PATH)
+            print(f"val loss улучшился, лучшие веса сохранены в {WEIGHTS_PATH}")
         else:
             epochs_no_improve += 1
             print(
                 f"улучшения нет уже {epochs_no_improve} эпох подряд "
                 f"(лучший val loss {best_val_loss:.4f})"
             )
-            if epochs_no_improve >= patience:
-                print(
-                    f"останавливаем обучение: {patience} эпох без улучшения, "
-                    f"последняя эпоха {epoch + 1}"
-                )
-                break
+
+        # Save the latest state every epoch so interruption does not roll back
+        # to the last epoch that improved validation loss.
+        torch.save({
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "loss": float(val_loss),
+            "best_val_loss": float(best_val_loss),
+            "epochs_no_improve": epochs_no_improve,
+            "config": config,
+        }, LAST_CHECKPOINT_PATH)
+
+        if epochs_no_improve >= patience:
+            print(
+                f"останавливаем обучение: {patience} эпох без улучшения, "
+                f"последняя эпоха {epoch + 1}"
+            )
+            break
 
     print(f"\nобучение закончено, лучший val loss {best_val_loss:.4f}")
     print(f"веса лежат тут: {WEIGHTS_PATH}")

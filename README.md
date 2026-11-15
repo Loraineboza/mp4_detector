@@ -157,7 +157,7 @@ python train.py
 model/weights_faster_rcnn_voc.pth
 ```
 
-Также создаётся конфиг:
+Последнее состояние обучения для точного продолжения сохраняется после каждой эпохи в `model/last_checkpoint.pth`.\n\nТакже создаётся конфиг:
 
 ```text
 model/training_config.json
