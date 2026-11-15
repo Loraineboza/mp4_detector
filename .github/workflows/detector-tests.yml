@@ -27,6 +27,13 @@ jobs:
       - run: python -m pip install -U pip numpy
       - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: python synthetic_experiment/experiment.py --output-dir /tmp/synthetic-artifacts
+      - name: Upload checkpoint and metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytorch-synthetic-experiment
+          path: /tmp/synthetic-artifacts/
+          if-no-files-found: error
+          retention-days: 30
 
   torchvision-smoke:
     runs-on: ubuntu-latest
