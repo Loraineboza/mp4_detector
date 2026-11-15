@@ -173,6 +173,12 @@ def main():
                 checkpoint.get("best_val_loss", checkpoint.get("loss", float("inf")))
             )
             epochs_no_improve = int(checkpoint.get("epochs_no_improve", 0))
+            if "rng_state" in checkpoint:
+                torch.set_rng_state(checkpoint["rng_state"].cpu())
+            if "loader_generator_state" in checkpoint:
+                loader_generator.set_state(checkpoint["loader_generator_state"].cpu())
+            if torch.cuda.is_available() and "cuda_rng_state_all" in checkpoint:
+                torch.cuda.set_rng_state_all(checkpoint["cuda_rng_state_all"])
         else:
             # Backward compatibility with checkpoints containing only model weights.
             model.load_state_dict(checkpoint)
@@ -201,6 +207,9 @@ def main():
                 "loss": float(val_loss),
                 "best_val_loss": float(best_val_loss),
                 "epochs_no_improve": epochs_no_improve,
+                "rng_state": torch.get_rng_state(),
+                "loader_generator_state": loader_generator.get_state(),
+                "cuda_rng_state_all": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [],
                 "config": config,
             }, WEIGHTS_PATH)
             print(f"val loss улучшился, лучшие веса сохранены в {WEIGHTS_PATH}")
@@ -221,6 +230,9 @@ def main():
             "loss": float(val_loss),
             "best_val_loss": float(best_val_loss),
             "epochs_no_improve": epochs_no_improve,
+            "rng_state": torch.get_rng_state(),
+            "loader_generator_state": loader_generator.get_state(),
+            "cuda_rng_state_all": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [],
             "config": config,
         }, LAST_CHECKPOINT_PATH)
 
