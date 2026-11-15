@@ -1,0 +1,28 @@
+name: Detector metrics and synthetic experiment
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  numpy-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -U pip numpy pytest
+      - run: python -m pytest -q tests_metrics
+
+  synthetic-pytorch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -U pip numpy
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: python synthetic_experiment/experiment.py --output-dir /tmp/synthetic-artifacts
