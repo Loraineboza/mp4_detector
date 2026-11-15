@@ -85,7 +85,10 @@ def process_video(video_path, model, output_path=OUTPUT_PATH):
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-
+    if not writer.isOpened():
+        cap.release()
+        raise RuntimeError(f"Не удалось создать видеофайл: {output_path}")
+    
     frame_idx = 0
     try:
         while True:
