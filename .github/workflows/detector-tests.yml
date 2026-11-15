@@ -27,3 +27,14 @@ jobs:
       - run: python -m pip install -U pip numpy
       - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: python synthetic_experiment/experiment.py --output-dir /tmp/synthetic-artifacts
+
+  torchvision-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -U pip numpy pillow tqdm
+      - run: python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+      - run: python -c "import torch, torchvision; from train import get_model; model = get_model(21, pretrained=False); print('torch', torch.__version__); print('torchvision', torchvision.__version__); print(type(model).__name__)"
