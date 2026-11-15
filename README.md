@@ -143,7 +143,7 @@ print(metrics["map"])
 
 ## Проверки
 
-Совместимость API модели проверена отдельным CPU smoke test в GitHub Actions: PyTorch 2.15.0+cpu и torchvision 0.29.2+cpu; создание FasterRCNN с 21 классом прошло успешно. Это подтверждает совместимость указанной версии API, но не является полным обучением VOC-модели. CI run: https://github.com/Loraineboza/mp4_detector/actions/runs/43743950342.
+Совместимость API модели проверена отдельным CPU smoke test в GitHub Actions: PyTorch 2.15.0+cpu и torchvision 0.29.2+cpu; создание FasterRCNN с 21 классом прошло успешно. Это подтверждает совместимость указанной версии API, но не является полным обучением VOC-модели. CI run: https://github.com/Loraineboza/mp4_detector/actions/runs/43744160446.
 
 Тесты NumPy-модуля:
 
