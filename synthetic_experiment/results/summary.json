@@ -8,13 +8,13 @@
     "test": 90
   },
   "best_epoch": 28,
-  "best_validation_mse": 0.0738621261384752,
-  "test_mse": 0.2303723282284207,
+  "best_validation_mse": 0.07386214733123779,
+  "test_mse": 0.2303724898232354,
   "checkpoint_predictions_identical": true,
   "restored_optimizer_state_entries": 4,
-  "continued_training_mse": 0.11135560336212318,
+  "continued_training_mse": 0.1113555644417093,
   "learning_rate_comparison": {
-    "lr_0.001": 2.256805335150825,
-    "lr_0.1": 0.13025523291693794
+    "lr_0.001": 2.256805419921875,
+    "lr_0.1": 0.13025516668955486
   }
 }
