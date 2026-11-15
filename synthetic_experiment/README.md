@@ -37,21 +37,21 @@ python experiment.py
 
 ## Фактический запуск
 
-Проверено на CPU с PyTorch 2.10.0+cpu, seed=42.
+Основной воспроизводимый CI-прогон выполнен на CPU с PyTorch 2.15.0+cpu, seed=42. Отдельный локальный запуск в рабочей среде также завершился успешно на PyTorch 2.10.0+cpu; небольшие отличия последних знаков метрик ожидаемы между версиями PyTorch.
 
 - best epoch: 28
-- best validation MSE: 0.07386214733123779
-- test MSE: 0.2303724898232354
+- best validation MSE: 0.0738621261384752
+- test MSE: 0.2303723282284207
 - predictions after checkpoint reload: exactly equal
 - restored optimizer state entries: 4
 - training continued after optimizer restoration: yes
-- continued training MSE: 0.1113555644417093
+- continued training MSE: 0.11135560336212318
 
 Сравнение learning rate после 20 эпох при одинаковых данных и начальном состоянии:
-- SGD lr=0.001: validation MSE 2.256805419921875
-- SGD lr=0.1: validation MSE 0.13025516668955486
+- SGD lr=0.001: validation MSE 2.256805335150825
+- SGD lr=0.1: validation MSE 0.13025523291693794
 
-Подробный журнал по эпохам находится в training_log.json, итоговая машинно-читаемая сводка — в summary.json.
+Подробный журнал по эпохам находится в training_log.json, итоговая машинно-читаемая сводка — в summary.json. Успешный CI run: https://github.com/Loraineboza/mp4_detector/actions/runs/43743825163.
 
 ## Ограничения
 
