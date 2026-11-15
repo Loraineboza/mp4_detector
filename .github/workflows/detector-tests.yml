@@ -37,4 +37,4 @@ jobs:
           python-version: "3.11"
       - run: python -m pip install -U pip numpy pillow tqdm
       - run: python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-      - run: python -c "import torch, torchvision; from train import get_model; model = get_model(21, pretrained=False); print('torch', torch.__version__); print('torchvision', torchvision.__version__); print(type(model).__name__)"
+      - run: python -c "import torch, torchvision; from train import get_model; print(torchvision.models.detection.FasterRCNN_ResNet50_FPN_Weights.DEFAULT); model = get_model(21, pretrained=False); print('torch', torch.__version__); print('torchvision', torchvision.__version__); print(type(model).__name__)"
