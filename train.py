@@ -130,7 +130,12 @@ def main():
             best_val_loss = val_loss
             epochs_no_improve = 0
             with open(WEIGHTS_PATH, "wb") as f:
-                torch.save(model.state_dict(), f)
+                torch.save({
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "loss": loss,
+                }, f)
             print(f"val loss улучшился, веса сохранены в {WEIGHTS_PATH}")
         else:
             epochs_no_improve += 1
