@@ -20,8 +20,15 @@ def load_model(model_path):
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, NUM_CLASSES)
 
-    state_dict = torch.load(model_path, map_location=DEVICE)
+    checkpoint = torch.load(model_path, map_location=DEVICE)
+
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        state_dict = checkpoint["model_state_dict"]
+    else:
+        state_dict = checkpoint
+    
     model.load_state_dict(state_dict)
+
     model.to(DEVICE)
     model.eval()
     return model
