@@ -49,6 +49,9 @@ def seed_everything(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    if hasattr(torch.backends, "cudnn"):
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
@@ -63,9 +66,14 @@ def collate_fn(batch):
     return tuple(zip(*batch))
 
 
-def get_model(num_classes: int):
-    weights = torchvision.models.detection.FasterRCNN_ResNet50_FPN_Weights.DEFAULT
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(weights=weights)
+def get_model(num_classes: int, pretrained: bool = True):
+    weights = (
+        torchvision.models.detection.FasterRCNN_ResNet50_FPN_Weights.DEFAULT
+        if pretrained else None
+    )
+    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(
+        weights=weights, weights_backbone=None if not pretrained else None
+    )
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     model.roi_heads.box_predictor = torchvision.models.detection.faster_rcnn.FastRCNNPredictor(
         in_features, num_classes
@@ -238,7 +246,7 @@ def main():
     print(f"device={DEVICE} train={len(train_dataset)} validation={len(val_dataset)}")
     print(f"torch={torch.__version__} torchvision={torchvision.__version__}")
 
-    model = get_model(NUM_CLASS).to(DEVICE)
+    model = get_model(NUM_CLASS, pretrained=not args.resume).to(DEVICE)
     optimizer = torch.optim.SGD(
         model.parameters(), lr=DEFAULT_CONFIG["learning_rate"],
         momentum=DEFAULT_CONFIG["momentum"], weight_decay=DEFAULT_CONFIG["weight_decay"],
