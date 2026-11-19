@@ -1,0 +1,11 @@
+Synthetic regression experiment (CPU)
+
+Validation comparison:
+lr=0.01 | best_val_loss=0.002543 | best_epoch=73
+lr=0.001 | best_val_loss=0.024129 | best_epoch=80
+
+Selected learning rate: 0.01
+Checkpoint predictions restored: OK
+Selected model test_mse=0.002652
+Optimizer state restored: 1168->1169
+Experiment completed successfully

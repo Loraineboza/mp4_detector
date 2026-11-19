@@ -1,4 +1,3 @@
-"""Deterministic PyTorch regression experiment for checkpoint and resume validation."""
 from __future__ import annotations
 
 import os
@@ -20,8 +19,6 @@ def set_seed(seed: int = SEED) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
 
 
 def make_dataset(size: int, seed: int) -> TensorDataset:
@@ -36,8 +33,10 @@ class RegressionNet(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.layers = nn.Sequential(
-            nn.Linear(1, 32), nn.Tanh(),
-            nn.Linear(32, 32), nn.Tanh(),
+            nn.Linear(1, 32),
+            nn.Tanh(),
+            nn.Linear(32, 32),
+            nn.Tanh(),
             nn.Linear(32, 1),
         )
 
@@ -47,17 +46,28 @@ class RegressionNet(nn.Module):
 
 def evaluate(model: nn.Module, loader: DataLoader) -> float:
     model.eval()
-    total_loss, count = 0.0, 0
+    total_loss = 0.0
+    count = 0
+
     with torch.no_grad():
         for x, y in loader:
-            total_loss += float(nn.functional.mse_loss(model(x), y, reduction="sum").item())
+            total_loss += float(
+                nn.functional.mse_loss(
+                    model(x), y, reduction="sum"
+                ).item()
+            )
             count += len(x)
+
     return total_loss / count
 
 
-def train_one_epoch(model: nn.Module, optimizer: torch.optim.Optimizer,
-                    loader: DataLoader) -> None:
+def train_one_epoch(
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    loader: DataLoader,
+) -> None:
     model.train()
+
     for x, y in loader:
         optimizer.zero_grad(set_to_none=True)
         loss = nn.functional.mse_loss(model(x), y)
@@ -67,95 +77,177 @@ def train_one_epoch(model: nn.Module, optimizer: torch.optim.Optimizer,
 
 def optimizer_step_count(optimizer: torch.optim.Optimizer) -> int:
     steps = []
+
     for state in optimizer.state.values():
         step = state.get("step")
         if step is not None:
-            steps.append(int(step.item()) if torch.is_tensor(step) else int(step))
+            steps.append(
+                int(step.item()) if torch.is_tensor(step) else int(step)
+            )
+
     return max(steps, default=0)
 
 
-def run_experiment(lr: float, train_set: TensorDataset,
-                   val_loader: DataLoader, test_loader: DataLoader) -> float:
+def train_candidate(
+    lr: float,
+    train_set: TensorDataset,
+    val_loader: DataLoader,
+) -> dict:
     set_seed(SEED)
+
     train_generator = torch.Generator().manual_seed(SEED + 4)
     train_loader = DataLoader(
-        train_set, batch_size=BATCH_SIZE, shuffle=True, generator=train_generator
+        train_set,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        generator=train_generator,
     )
+
     model = RegressionNet()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    checkpoint_path = os.path.join(CHECKPOINT_DIR, f"best_lr_{lr:g}.pth")
+    checkpoint_path = os.path.join(
+        CHECKPOINT_DIR, f"best_lr_{lr:g}.pth"
+    )
+
+    probe_x = train_set.tensors[0][:8]
     best_val_loss = float("inf")
-    sample_x, _ = next(iter(test_loader))
-    best_predictions = None
+    best_epoch = 0
 
     for epoch in range(EPOCHS):
         train_one_epoch(model, optimizer, train_loader)
         val_loss = evaluate(model, val_loader)
+
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            best_epoch = epoch + 1
+
             model.eval()
             with torch.no_grad():
-                best_predictions = model(sample_x).detach().clone()
-            torch.save({
-                "epoch": epoch,
-                "learning_rate": lr,
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "val_loss": float(val_loss),
-            }, checkpoint_path)
+                probe_predictions = model(probe_x).detach().clone()
 
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    restored_model = RegressionNet()
-    restored_model.load_state_dict(checkpoint["model_state_dict"])
-    restored_optimizer = torch.optim.Adam(restored_model.parameters(), lr=lr)
-    restored_optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            torch.save(
+                {
+                    "epoch": best_epoch,
+                    "learning_rate": lr,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "val_loss": best_val_loss,
+                    "probe_predictions": probe_predictions,
+                },
+                checkpoint_path,
+            )
 
-    if best_predictions is None:
-        raise AssertionError("No best-model predictions were captured")
-    restored_model.eval()
-    with torch.no_grad():
-        torch.testing.assert_close(
-            restored_model(sample_x), best_predictions, rtol=0.0, atol=0.0
-        )
-    test_loss = evaluate(restored_model, test_loader)
-
-    steps_before = optimizer_step_count(restored_optimizer)
-    if not restored_optimizer.state:
-        raise AssertionError("Optimizer state was not restored")
-    restored_model.train()
-    x_batch, y_batch = next(iter(train_loader))
-    restored_optimizer.zero_grad(set_to_none=True)
-    loss = nn.functional.mse_loss(restored_model(x_batch), y_batch)
-    loss.backward()
-    restored_optimizer.step()
-    steps_after = optimizer_step_count(restored_optimizer)
-    if steps_after <= steps_before:
-        raise AssertionError("Optimizer did not continue from restored state")
-
-    print(
-        f"lr={lr:g} | best_val_loss={best_val_loss:.6f} | test_mse={test_loss:.6f} | "
-        f"optimizer_steps={steps_before}->{steps_after} | predictions_restored=OK"
-    )
-    return test_loss
+    return {
+        "learning_rate": lr,
+        "val_loss": best_val_loss,
+        "epoch": best_epoch,
+        "checkpoint_path": checkpoint_path,
+    }
 
 
 def main() -> None:
     set_seed(SEED)
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
     train_set = make_dataset(1024, SEED + 1)
     val_set = make_dataset(256, SEED + 2)
     test_set = make_dataset(256, SEED + 3)
-    val_loader = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False)
-    test_loader = DataLoader(test_set, batch_size=BATCH_SIZE, shuffle=False)
+
+    val_loader = DataLoader(
+        val_set, batch_size=BATCH_SIZE, shuffle=False
+    )
+    test_loader = DataLoader(
+        test_set, batch_size=BATCH_SIZE, shuffle=False
+    )
 
     print("Synthetic regression experiment (CPU)")
-    results = {
-        lr: run_experiment(lr, train_set, val_loader, test_loader)
+
+    results = [
+        train_candidate(lr, train_set, val_loader)
         for lr in LEARNING_RATES
-    }
-    print("\nLearning-rate comparison (test MSE):")
-    for lr, loss in results.items():
-        print(f"  lr={lr:g}: {loss:.6f}")
+    ]
+
+    print("\nValidation comparison:")
+    for result in results:
+        print(
+            f"lr={result['learning_rate']:g} | "
+            f"best_val_loss={result['val_loss']:.6f} | "
+            f"best_epoch={result['epoch']}"
+        )
+
+    selected = min(results, key=lambda result: result["val_loss"])
+
+    print(
+        f"\nSelected learning rate: "
+        f"{selected['learning_rate']:g}"
+    )
+
+    checkpoint = torch.load(
+        selected["checkpoint_path"],
+        map_location="cpu",
+    )
+
+    restored_model = RegressionNet()
+    restored_model.load_state_dict(checkpoint["model_state_dict"])
+
+    restored_optimizer = torch.optim.Adam(
+        restored_model.parameters(),
+        lr=selected["learning_rate"],
+    )
+    restored_optimizer.load_state_dict(
+        checkpoint["optimizer_state_dict"]
+    )
+
+    probe_x = train_set.tensors[0][:8]
+    restored_model.eval()
+
+    with torch.no_grad():
+        restored_predictions = restored_model(probe_x)
+
+    torch.testing.assert_close(
+        restored_predictions,
+        checkpoint["probe_predictions"],
+        rtol=0.0,
+        atol=0.0,
+    )
+
+    print("Checkpoint predictions restored: OK")
+
+    test_loss = evaluate(restored_model, test_loader)
+    print(f"Selected model test_mse={test_loss:.6f}")
+
+    steps_before = optimizer_step_count(restored_optimizer)
+
+    if not restored_optimizer.state:
+        raise AssertionError("Optimizer state was not restored")
+
+    train_loader = DataLoader(
+        train_set,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        generator=torch.Generator().manual_seed(SEED + 4),
+    )
+
+    restored_model.train()
+    x_batch, y_batch = next(iter(train_loader))
+
+    restored_optimizer.zero_grad(set_to_none=True)
+    loss = nn.functional.mse_loss(restored_model(x_batch), y_batch)
+    loss.backward()
+    restored_optimizer.step()
+
+    steps_after = optimizer_step_count(restored_optimizer)
+
+    if steps_after <= steps_before:
+        raise AssertionError(
+            "Optimizer did not continue from restored state"
+        )
+
+    print(
+        f"Optimizer state restored: "
+        f"{steps_before}->{steps_after}"
+    )
+    print("Experiment completed successfully")
 
 
 if __name__ == "__main__":
